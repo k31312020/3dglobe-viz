@@ -1,16 +1,64 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Delaunay2D, type Vec2 } from './delaunate';
+interface CountryData {
+  name: string;
+  polygons: LatLon[][];
+  points: LatLon[][];
+  spherePoints: Vec3[][];
+  triangles: [number, number, number][][];
+  pointsMesh?: THREE.Points[];
+  mesh?: THREE.Mesh[];       // optional, for the surface
+  edges?: THREE.LineSegments[]; // optional, for edges
+}
+
+let countries: CountryData[] = [];
 
 // --- Types ---
-interface LatLon { lon: number; lat: number; boundary?: boolean }
+interface LatLon { lon: number; lat: number; boundary?: boolean, boundaryIndex?: number }
 interface Vec3 { x: number; y: number; z: number; }
 
-// --- Load GeoJSON ---
-async function loadAustraliaPolygon(): Promise<LatLon[][]> {
-  const res = await fetch('/public/australia.geojson');
+
+async function loadAllCountries() {
+  const res = await fetch('/public/countries.geo.json');
   const geojson = await res.json();
-  const coords: number[][][][] = geojson.features[0].geometry.coordinates;
+
+  countries = geojson.features.map((feature: any) => {
+    let coords: number[][][] = [];
+
+    if (feature.geometry.type === "Polygon") {
+      coords = [feature.geometry.coordinates]; // wrap single polygon in an array
+    } else if (feature.geometry.type === "MultiPolygon") {
+      coords = feature.geometry.coordinates.flat(); // flatten MultiPolygon
+    }
+
+    const polygons = coords.map(ring =>
+      ring.map(([lon, lat]) => ({ lon, lat }))
+    );
+
+    return {
+      name: feature.properties?.ADMIN || feature.properties?.name || "Unknown",
+      polygons,
+      points: [],
+      spherePoints: [],
+      triangles: [],
+      pointsMesh: [],
+      edges: [],
+      mesh: []
+    };
+  }).filter((_: CountryData, i: number) => i < 1);
+
+  console.log(countries)
+}
+// --- Load GeoJSON ---
+async function loadPolygons(): Promise<LatLon[][]> {
+  const res = await fetch('/public/countries.geo.json');
+  const geojson = await res.json();
+  return geojson;
+}
+
+async function extractBoundary(index: number, geojson: { features: { geometry: { coordinates: [] } }[] }) {
+  const coords: number[][][][] = geojson.features[index].geometry.coordinates;
   return coords.flat().map(ring => ring.map(([lon, lat]) => ({ lon, lat })));
 }
 
@@ -25,37 +73,90 @@ function latLonToSphere(lat: number, lon: number): Vec3 {
   };
 }
 
-function pointInPolygon(point: LatLon, polygon: LatLon[][]): boolean {
+function pointInPolygon(point: LatLon, polygon: LatLon[]): boolean {
   let inside = false;
-  for (const ring of polygon) {
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const xi = ring[i].lon, yi = ring[i].lat;
-      const xj = ring[j].lon, yj = ring[j].lat;
-      const intersect = ((yi > point.lat) !== (yj > point.lat)) &&
-        (point.lon < (xj - xi) * (point.lat - yi) / (yj - yi) + xi);
-      if (intersect) inside = !inside;
-    }
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].lon, yi = polygon[i].lat;
+    const xj = polygon[j].lon, yj = polygon[j].lat;
+    const intersect = ((yi > point.lat) !== (yj > point.lat)) &&
+      (point.lon < (xj - xi) * (point.lat - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
   }
+
   return inside;
 }
 
-function samplePointsInPolygon(polygon: LatLon[][], num: number): LatLon[] {
-  let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
-  for (const ring of polygon) {
-    for (const p of ring) {
-      minLat = Math.min(minLat, p.lat);
-      minLon = Math.min(minLon, p.lon);
-      maxLat = Math.max(maxLat, p.lat);
-      maxLon = Math.max(maxLon, p.lon);
-    }
+function isAwayFromEdges(p: LatLon, polygon: LatLon[], minDist: number): boolean {
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+
+    const d = pointSegmentDistance(
+      p.lon, p.lat,
+      a.lon, a.lat,
+      b.lon, b.lat
+    );
+
+    if (d < minDist) return false;
   }
+  return true;
+}
+
+function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+
+  // Handle degenerate edge
+  if (dx === 0 && dy === 0) {
+    const dxp = px - ax;
+    const dyp = py - ay;
+    return Math.sqrt(dxp*dxp + dyp*dyp);
+  }
+
+  // t = projection of P onto AB
+  const t = ((px - ax) * dx + (py - ay) * dy) / (dx*dx + dy*dy);
+
+  if (t <= 0) {
+    // closest to A
+    const dxp = px - ax;
+    const dyp = py - ay;
+    return Math.sqrt(dxp*dxp + dyp*dyp);
+  }
+
+  if (t >= 1) {
+    // closest to B
+    const dxp = px - bx;
+    const dyp = py - by;
+    return Math.sqrt(dxp*dxp + dyp*dyp);
+  }
+
+  // closest point lies on segment
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  const dxp = px - cx;
+  const dyp = py - cy;
+  return Math.sqrt(dxp*dxp + dyp*dyp);
+}
+
+function samplePointsInPolygon(polygon: LatLon[], num: number, offset = 0.1): LatLon[] {
+  let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
+  // for (const ring of polygon) {
+  for (const p of polygon) {
+    minLat = Math.min(minLat, p.lat);
+    minLon = Math.min(minLon, p.lon);
+    maxLat = Math.max(maxLat, p.lat);
+    maxLon = Math.max(maxLon, p.lon);
+  }
+  // }
   // include original polygon in the triangulation
-  const pts: LatLon[] = [...polygon.flat().map(p => ({ lat: p.lat, lon: p.lon, boundary: true }))];
+  const pts: LatLon[] = polygon.map((p, i) => ({ lat: p.lat, lon: p.lon, boundary: true, boundaryIndex: i }));
 
   while (pts.length < num) {
-    const lat = minLat + (maxLat - minLat) * Math.random();
-    const lon = minLon + (maxLon - minLon) * Math.random();
-    if (pointInPolygon({ lat, lon }, polygon)) pts.push({ lat, lon });
+    const lat = minLat + Math.random() * (maxLat - minLat);
+    const lon = minLon + Math.random() * (maxLon - minLon);
+      const p = { lat, lon };
+    if (pointInPolygon({ lat, lon }, polygon) && isAwayFromEdges(p, polygon, offset)) pts.push({ lat, lon });
   }
   return pts;
 }
@@ -67,6 +168,7 @@ camera.position.set(0, 0, 3);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 0); // fully transparent
 document.body.appendChild(renderer.domElement);
 
 // OrbitControls
@@ -104,7 +206,7 @@ sun.position.set(5, 3, 2);
 scene.add(sun);
 
 // --- Points, triangles ---
-let numRandom = 500;
+let numRandom = 100;
 let randomLatLon: LatLon[] = [];
 let randomSpherePoints: Vec3[] = [];
 let triangles: [number, number, number][] = [];
@@ -182,7 +284,6 @@ function drawSphereTriangles() {
     const A = randomSpherePoints[a];
     const B = randomSpherePoints[b];
     const C = randomSpherePoints[c];
-    console.log(randomLatLon[a].boundary && randomLatLon[b].boundary);
     // Only add edge if not connecting two boundary points
     if (!randomLatLon[a].boundary || !randomLatLon[b].boundary || (randomLatLon[a].boundary && randomLatLon[b].boundary && b === a + 1)) {
       positions.push(A.x, A.y, A.z, B.x, B.y, B.z);
@@ -300,16 +401,188 @@ function drawSphereSurfaces() {
 
 
 // --- Regenerate ---
+// async function regenerate() {
+//   const polygons = await loadPolygons();
+//   randomLatLon = samplePointsInPolygon(polygon, numRandom);
+//   randomSpherePoints = randomLatLon.map(p => latLonToSphere(p.lat, p.lon));
+//   const flat = randomLatLon.map(p => ({ x: p.lon, y: p.lat, boundary: true }));
+//   triangles = triangulate2D(flat);
+//   drawSpherePoints();
+//   drawSphereTriangles();
+//   drawSphereSurfaces();
+// }
+
 async function regenerate() {
-  const polygon = await loadAustraliaPolygon();
-  randomLatLon = samplePointsInPolygon(polygon, numRandom);
-  randomSpherePoints = randomLatLon.map(p => latLonToSphere(p.lat, p.lon));
-  const flat = randomLatLon.map(p => ({ x: p.lon, y: p.lat, boundary: true }));
-  triangles = triangulate2D(flat);
-  drawSpherePoints();
-  drawSphereTriangles();
-  drawSphereSurfaces();
+  await loadAllCountries();
+  generateCountryData(200);
+  ptsGroup.clear();
+  triGroup.clear();
+  surfaceGroup.clear();
+  for (const country of countries) {
+    for(let i = 0; i < country.polygons.length; i ++) {
+      drawCountry(country, i);
+    }
+  }
 }
+
+function polygonArea2D(polygon: LatLon[]): number {
+  let area = 0;
+  const n = polygon.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += polygon[i].lon * polygon[j].lat - polygon[j].lon * polygon[i].lat;
+  }
+  return Math.abs(area) / 2;
+}
+
+function generateCountryData(numPointsPerCountry = 200) {
+  for (const country of countries) {
+    country.points = [];
+    country.spherePoints = [];
+    country.triangles = [];
+    console.log(country);
+    for (const polygon of country.polygons) {
+      const triangles = [];
+      const spherePoints = [];
+      const points = [];
+      const numOfIntermediatePoints = Math.max(polygonArea2D(polygon) * 2, 100);
+      console.log(numOfIntermediatePoints)
+      const pts = samplePointsInPolygon(polygon, numOfIntermediatePoints);
+      const sp = pts.map(p => latLonToSphere(p.lat, p.lon));
+      const flat = pts.map(p => ({ x: p.lon, y: p.lat }));
+      const tris = triangulate2D(flat);
+
+      // Shift indices to global country.points array
+      // const indexOffset = country.points.flat().length;
+      points.push(...pts);
+      country.points.push(points);
+      spherePoints.push(...pts.map(p => latLonToSphere(p.lat, p.lon)));
+      country.spherePoints.push(spherePoints);
+      triangles.push(...tris.map(t => [t[0], t[1], t[2]]));
+      country.triangles.push(triangles);
+    }
+  }
+}
+
+function areSequential(a: LatLon, b: LatLon, polygon: LatLon[]): boolean {
+  const isInsidePolygon = pointInPolygon(a, polygon) && pointInPolygon(b, polygon);
+  if (!a.boundary || !b.boundary) return !isInsidePolygon;
+
+  const diff = Math.abs(a.boundaryIndex! - b.boundaryIndex!);
+  return (diff !== 1) || !isInsidePolygon;
+}
+
+function isBoundarySequenceTriangle(pA: LatLon, pB: LatLon, pC: LatLon, polygon: LatLon[]): boolean {
+  const ab = areSequential(pA, pB, polygon);
+  const bc = areSequential(pB, pC, polygon);
+  const ca = areSequential(pC, pA, polygon);
+
+  // triangle qualifies if *at least* one pair is sequential
+  return (ab && bc) || (ab && ca) || (bc && ca);
+}
+
+function drawCountry(country: CountryData, index: number) {
+  // --- Points ---
+  const ptsGeom = new THREE.BufferGeometry();
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const colorBoundary = new THREE.Color(0xff0000);
+  const colorInternal = new THREE.Color(0xffcc00);
+
+  for (let i = 0; i < country.spherePoints[index].length; i++) {
+    const p = country.spherePoints[index][i];
+    positions.push(p.x, p.y, p.z);
+    const c = country.points[index][i].boundary ? colorBoundary : colorInternal;
+    colors.push(c.r, c.g, c.b);
+  }
+
+
+  ptsGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  ptsGeom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  country.pointsMesh?.push(new THREE.Points(ptsGeom, new THREE.PointsMaterial({ size: 0.01, vertexColors: true })));
+  country.pointsMesh?.[index] && ptsGroup.add(country.pointsMesh[index]);
+
+  // --- Triangles ---
+  const triPositions: number[] = [];
+  for (const t of country.triangles[index]) {
+    const [a, b, c] = t;
+    const A = country.spherePoints[index][a], B = country.spherePoints[index][b], C = country.spherePoints[index][c];
+    // Only draw if at least one point is not a boundary
+    const polygonEdgeTri = isBoundarySequenceTriangle(
+      country.points[index][a],
+      country.points[index][b],
+      country.points[index][c],
+      country.polygons[index]
+    );
+
+    if (polygonEdgeTri) continue;
+
+    // Add edges
+    triPositions.push(
+      A.x, A.y, A.z, B.x, B.y, B.z,
+      B.x, B.y, B.z, C.x, C.y, C.z,
+      C.x, C.y, C.z, A.x, A.y, A.z
+    );
+  }
+  const triGeom = new THREE.BufferGeometry();
+  triGeom.setAttribute('position', new THREE.Float32BufferAttribute(triPositions, 3));
+  country.edges?.push(new THREE.LineSegments(triGeom, new THREE.LineBasicMaterial({ color: 0xffffff })));
+  country.edges?.[index] && triGroup.add(country.edges[index]);
+
+  // --- Surface ---
+  const positionsSurf: number[] = [];
+  const colorsSurf: number[] = [];
+  const extrudeHeight = 0.02;
+
+  for (const t of country.triangles[index]) {
+    const [a, b, c] = t;
+
+    const polygonEdgeTri = isBoundarySequenceTriangle(
+      country.points[index][a],
+      country.points[index][b],
+      country.points[index][c],
+      country.polygons[index]
+    );
+
+    if (polygonEdgeTri) continue;
+
+    const A0 = new THREE.Vector3(...Object.values(country.spherePoints[index][a]));
+    const B0 = new THREE.Vector3(...Object.values(country.spherePoints[index][b]));
+    const C0 = new THREE.Vector3(...Object.values(country.spherePoints[index][c]));
+    const An = A0.clone().normalize().multiplyScalar(extrudeHeight);
+    const Bn = B0.clone().normalize().multiplyScalar(extrudeHeight);
+    const Cn = C0.clone().normalize().multiplyScalar(extrudeHeight);
+
+    const A1 = A0.clone().add(An);
+    const B1 = B0.clone().add(Bn);
+    const C1 = C0.clone().add(Cn);
+
+    const col = new THREE.Color(0x44aa88);
+
+    pushTriSurf(A0, B0, C0, col);
+    pushTriSurf(A1, C1, B1, col);
+    pushQuadSurf(A0, B0, A1, B1, col);
+    pushQuadSurf(B0, C0, B1, C1, col);
+    pushQuadSurf(C0, A0, C1, A1, col);
+  }
+
+  const geomSurf = new THREE.BufferGeometry();
+  geomSurf.setAttribute("position", new THREE.Float32BufferAttribute(positionsSurf, 3));
+  geomSurf.setAttribute("color", new THREE.Float32BufferAttribute(colorsSurf, 3));
+  geomSurf.computeVertexNormals();
+  country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: 0x44aa88, side: THREE.DoubleSide })));
+  country.mesh?.[index] && surfaceGroup.add(country.mesh[index]);
+
+  function pushTriSurf(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3, color: THREE.Color) {
+    positionsSurf.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
+    for (let i = 0; i < 3; i++) colorsSurf.push(color.r, color.g, color.b);
+  }
+  function pushQuadSurf(a: THREE.Vector3, b: THREE.Vector3, a2: THREE.Vector3, b2: THREE.Vector3, color: THREE.Color) {
+    pushTriSurf(a, b, a2, color);
+    pushTriSurf(b, b2, a2, color);
+  }
+}
+
 
 // --- UI ---
 const slider = document.createElement('input');
