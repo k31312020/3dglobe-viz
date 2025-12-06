@@ -27,7 +27,7 @@ async function loadAllCountries() {
     let coords: number[][][] = [];
 
     if (feature.geometry.type === "Polygon") {
-      coords = [feature.geometry.coordinates]; // wrap single polygon in an array
+      coords = feature.geometry.coordinates; // wrap single polygon in an array
     } else if (feature.geometry.type === "MultiPolygon") {
       coords = feature.geometry.coordinates.flat(); // flatten MultiPolygon
     }
@@ -46,20 +46,7 @@ async function loadAllCountries() {
       edges: [],
       mesh: []
     };
-  }).filter((_: CountryData, i: number) => i < 1);
-
-  console.log(countries)
-}
-// --- Load GeoJSON ---
-async function loadPolygons(): Promise<LatLon[][]> {
-  const res = await fetch('/public/countries.geo.json');
-  const geojson = await res.json();
-  return geojson;
-}
-
-async function extractBoundary(index: number, geojson: { features: { geometry: { coordinates: [] } }[] }) {
-  const coords: number[][][][] = geojson.features[index].geometry.coordinates;
-  return coords.flat().map(ring => ring.map(([lon, lat]) => ({ lon, lat })));
+  });
 }
 
 // --- Utilities ---
@@ -139,23 +126,23 @@ function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx
   return Math.sqrt(dxp*dxp + dyp*dyp);
 }
 
-function samplePointsInPolygon(polygon: LatLon[], num: number, offset = 0.1): LatLon[] {
+function samplePointsInPolygon(polygon: LatLon[], num: number, offset = 0): LatLon[] {
   let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
-  // for (const ring of polygon) {
+  
   for (const p of polygon) {
     minLat = Math.min(minLat, p.lat);
     minLon = Math.min(minLon, p.lon);
     maxLat = Math.max(maxLat, p.lat);
     maxLon = Math.max(maxLon, p.lon);
   }
-  // }
+  
   // include original polygon in the triangulation
   const pts: LatLon[] = polygon.map((p, i) => ({ lat: p.lat, lon: p.lon, boundary: true, boundaryIndex: i }));
 
   while (pts.length < num) {
     const lat = minLat + Math.random() * (maxLat - minLat);
     const lon = minLon + Math.random() * (maxLon - minLon);
-      const p = { lat, lon };
+    const p = { lat, lon };
     if (pointInPolygon({ lat, lon }, polygon) && isAwayFromEdges(p, polygon, offset)) pts.push({ lat, lon });
   }
   return pts;
@@ -207,9 +194,6 @@ scene.add(sun);
 
 // --- Points, triangles ---
 let numRandom = 100;
-let randomLatLon: LatLon[] = [];
-let randomSpherePoints: Vec3[] = [];
-let triangles: [number, number, number][] = [];
 
 // --- Triangulate 2D using Delaunay ---
 function triangulate2D(flatPoints: Vec2[]): [number, number, number][] {
@@ -244,177 +228,9 @@ function drawCircumcircles(delaunay: Delaunay2D) {
   }
 }
 
-// --- Draw helpers ---
-function drawSpherePoints() {
-  ptsGroup.clear();
-
-  const positions: number[] = [];
-  const colors: number[] = [];
-
-  const colorBoundary = new THREE.Color(0xff0000); // red
-  const colorInternal = new THREE.Color(0xffcc00); // yellow
-
-  for (let i = 0; i < randomSpherePoints.length; i++) {
-    positions.push(randomSpherePoints[i].x, randomSpherePoints[i].y, randomSpherePoints[i].z);
-    const isBoundaryPoint = randomLatLon[i]?.boundary;
-    const c = isBoundaryPoint ? colorBoundary : colorInternal;
-    colors.push(c.r, c.g, c.b);
-  }
-
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-  ptsGroup.add(
-    new THREE.Points(
-      geom,
-      new THREE.PointsMaterial({
-        size: 0.015,
-        vertexColors: true, // ← IMPORTANT
-      })
-    )
-  );
-}
-function drawSphereTriangles() {
-  triGroup.clear();
-  const positions: number[] = [];
-
-  for (const t of triangles) {
-    const [a, b, c] = t;
-    const A = randomSpherePoints[a];
-    const B = randomSpherePoints[b];
-    const C = randomSpherePoints[c];
-    // Only add edge if not connecting two boundary points
-    if (!randomLatLon[a].boundary || !randomLatLon[b].boundary || (randomLatLon[a].boundary && randomLatLon[b].boundary && b === a + 1)) {
-      positions.push(A.x, A.y, A.z, B.x, B.y, B.z);
-    }
-    if (!randomLatLon[b].boundary || !randomLatLon[c].boundary || (randomLatLon[b].boundary && randomLatLon[c].boundary && c === b + 1)) {
-      positions.push(B.x, B.y, B.z, C.x, C.y, C.z);
-    }
-    if (!randomLatLon[c].boundary || !randomLatLon[a].boundary || (randomLatLon[c].boundary && randomLatLon[a].boundary && a === c + 1)) {
-      positions.push(C.x, C.y, C.z, A.x, A.y, A.z);
-    }
-  }
-
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  const mat = new THREE.LineBasicMaterial({ color: 0xffffff });
-  triGroup.add(new THREE.LineSegments(geom, mat));
-}
-
-function drawSphereSurfaces() {
-  surfaceGroup.clear();
-
-  const positions: number[] = [];
-  const colors: number[] = [];
-
-  const extrudeHeight = 0.05; // 5% of radius, adjust as needed
-
-  const colorBoundary = new THREE.Color(0x0066ff);
-  const colorInternal = new THREE.Color(0x00ff88);
-
-  for (const t of triangles) {
-    const [a, b, c] = t;
-
-    const boundaryTriangle = randomLatLon[a].boundary && randomLatLon[b].boundary && randomLatLon[c].boundary;
-
-    const A = randomSpherePoints[a];
-    const B = randomSpherePoints[b];
-    const C = randomSpherePoints[c];
-
-    if (!A || !B || !C || boundaryTriangle) continue;
-
-    // Convert to normalized THREE vectors
-    const A0 = new THREE.Vector3(A.x, A.y, A.z);
-    const B0 = new THREE.Vector3(B.x, B.y, B.z);
-    const C0 = new THREE.Vector3(C.x, C.y, C.z);
-
-    // Normalize for extrusion direction
-    const An = A0.clone().normalize().multiplyScalar(extrudeHeight);
-    const Bn = B0.clone().normalize().multiplyScalar(extrudeHeight);
-    const Cn = C0.clone().normalize().multiplyScalar(extrudeHeight);
-
-    // Top vertices (extruded outward)
-    const A1 = A0.clone().add(An);
-    const B1 = B0.clone().add(Bn);
-    const C1 = C0.clone().add(Cn);
-
-    // Pick color
-    const col = (randomLatLon[a].boundary ||
-      randomLatLon[b].boundary ||
-      randomLatLon[c].boundary)
-      ? colorBoundary
-      : colorInternal;
-
-    // --- TRIANGLES ---
-    // Bottom triangle (A0,B0,C0)
-    pushTri(A0, B0, C0, col);
-    // Top triangle (A1,B1,C1)
-    pushTri(A1, C1, B1, col); // reverse winding for correct normals
-
-    // --- SIDE FACES (3 rectangular quads → 6 triangles) ---
-    pushQuad(A0, B0, A1, B1, col); // side AB
-    pushQuad(B0, C0, B1, C1, col); // side BC
-    pushQuad(C0, A0, C1, A1, col); // side CA
-  }
-
-  // ---- Build geometry ----
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geom.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geom.computeVertexNormals();
-
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x44aa88,
-    // flatShading: false,
-    side: THREE.DoubleSide,
-    // depthWrite: true,
-    // depthTest: true,
-    transparent: false,
-  });
-
-  surfaceGroup.add(new THREE.Mesh(geom, mat));
-
-  // ---- Helper: push one triangle ----
-  function pushTri(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3, color: THREE.Color) {
-    positions.push(
-      v1.x, v1.y, v1.z,
-      v2.x, v2.y, v2.z,
-      v3.x, v3.y, v3.z
-    );
-    for (let i = 0; i < 3; i++) {
-      colors.push(color.r, color.g, color.b);
-    }
-  }
-
-  // ---- Helper: push quad as 2 triangles ----
-  function pushQuad(a: THREE.Vector3, b: THREE.Vector3, a2: THREE.Vector3, b2: THREE.Vector3, color: THREE.Color) {
-    // Quad structure:
-    // a ---- b
-    // |      |
-    // a2 --- b2
-
-    pushTri(a, b, a2, color);  // first triangle
-    pushTri(b, b2, a2, color); // second triangle
-  }
-}
-
-
-// --- Regenerate ---
-// async function regenerate() {
-//   const polygons = await loadPolygons();
-//   randomLatLon = samplePointsInPolygon(polygon, numRandom);
-//   randomSpherePoints = randomLatLon.map(p => latLonToSphere(p.lat, p.lon));
-//   const flat = randomLatLon.map(p => ({ x: p.lon, y: p.lat, boundary: true }));
-//   triangles = triangulate2D(flat);
-//   drawSpherePoints();
-//   drawSphereTriangles();
-//   drawSphereSurfaces();
-// }
-
 async function regenerate() {
   await loadAllCountries();
-  generateCountryData(200);
+  generateCountryData();
   ptsGroup.clear();
   triGroup.clear();
   surfaceGroup.clear();
@@ -435,30 +251,26 @@ function polygonArea2D(polygon: LatLon[]): number {
   return Math.abs(area) / 2;
 }
 
-function generateCountryData(numPointsPerCountry = 200) {
+function generateCountryData() {
   for (const country of countries) {
     country.points = [];
     country.spherePoints = [];
     country.triangles = [];
-    console.log(country);
     for (const polygon of country.polygons) {
-      const triangles = [];
-      const spherePoints = [];
-      const points = [];
-      const numOfIntermediatePoints = Math.max(polygonArea2D(polygon) * 2, 100);
-      console.log(numOfIntermediatePoints)
-      const pts = samplePointsInPolygon(polygon, numOfIntermediatePoints);
-      const sp = pts.map(p => latLonToSphere(p.lat, p.lon));
-      const flat = pts.map(p => ({ x: p.lon, y: p.lat }));
-      const tris = triangulate2D(flat);
+      if (polygon.length < 20) {
+        country.points.push([]);
+        country.spherePoints.push([]);
+        country.triangles.push([]);
+        continue;
+      }
+      
+      const numOfIntermediatePoints = Math.min(1000, Math.max(polygonArea2D(polygon) * 2, 100));
+      const points = samplePointsInPolygon(polygon, numOfIntermediatePoints);
+      const flat = points.map(p => ({ x: p.lon, y: p.lat }));
+      const triangles = triangulate2D(flat);
 
-      // Shift indices to global country.points array
-      // const indexOffset = country.points.flat().length;
-      points.push(...pts);
       country.points.push(points);
-      spherePoints.push(...pts.map(p => latLonToSphere(p.lat, p.lon)));
-      country.spherePoints.push(spherePoints);
-      triangles.push(...tris.map(t => [t[0], t[1], t[2]]));
+      country.spherePoints.push([...points.map(p => latLonToSphere(p.lat, p.lon))]);
       country.triangles.push(triangles);
     }
   }
@@ -570,7 +382,7 @@ function drawCountry(country: CountryData, index: number) {
   geomSurf.setAttribute("position", new THREE.Float32BufferAttribute(positionsSurf, 3));
   geomSurf.setAttribute("color", new THREE.Float32BufferAttribute(colorsSurf, 3));
   geomSurf.computeVertexNormals();
-  country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: 0x44aa88, side: THREE.DoubleSide })));
+  country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: 'red', side: THREE.DoubleSide })));
   country.mesh?.[index] && surfaceGroup.add(country.mesh[index]);
 
   function pushTriSurf(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3, color: THREE.Color) {
