@@ -10,6 +10,7 @@ interface CountryData {
   pointsMesh?: THREE.Points[];
   mesh?: THREE.Mesh[];       // optional, for the surface
   edges?: THREE.LineSegments[]; // optional, for edges
+  color: string;
 }
 
 let countries: CountryData[] = [];
@@ -17,6 +18,10 @@ let countries: CountryData[] = [];
 // --- Types ---
 interface LatLon { lon: number; lat: number; boundary?: boolean, boundaryIndex?: number }
 interface Vec3 { x: number; y: number; z: number; }
+
+function randomColor(): string {
+  return '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+}
 
 
 async function loadAllCountries() {
@@ -44,7 +49,8 @@ async function loadAllCountries() {
       triangles: [],
       pointsMesh: [],
       edges: [],
-      mesh: []
+      mesh: [],
+      color: randomColor()
     };
   });
 }
@@ -382,7 +388,7 @@ function drawCountry(country: CountryData, index: number) {
   geomSurf.setAttribute("position", new THREE.Float32BufferAttribute(positionsSurf, 3));
   geomSurf.setAttribute("color", new THREE.Float32BufferAttribute(colorsSurf, 3));
   geomSurf.computeVertexNormals();
-  country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: 'red', side: THREE.DoubleSide })));
+  country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: country.color, side: THREE.DoubleSide })));
   country.mesh?.[index] && surfaceGroup.add(country.mesh[index]);
 
   function pushTriSurf(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3, color: THREE.Color) {
