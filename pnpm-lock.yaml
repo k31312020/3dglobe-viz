@@ -11,6 +11,12 @@ importers:
 
   .:
     dependencies:
+      clipper2-ts:
+        specifier: 1.5.4-8.578ca4d
+        version: 1.5.4-8.578ca4d
+      clipper2-wasm:
+        specifier: ^0.2.1
+        version: 0.2.1
       three:
         specifier: ^0.181.1
         version: 0.181.1
@@ -141,6 +147,9 @@ packages:
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
 
+  '@types/emscripten@1.41.5':
+    resolution: {integrity: sha512-cMQm7pxu6BxtHyqJ7mQZ2kXWV5SLmugybFdHCBbJ5eHzOo6VhBckEgAT3//rP5FwPHNPeEiq4SmQ5ucBwsOo4Q==}
+
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
 
@@ -152,6 +161,13 @@ packages:
 
   '@webgpu/types@0.1.66':
     resolution: {integrity: sha512-YA2hLrwLpDsRueNDXIMqN9NTzD6bCDkuXbOSe0heS+f8YE8usA6Gbv1prj81pzVHrbaAma7zObnIC+I6/sXJgA==}
+
+  clipper2-ts@1.5.4-8.578ca4d:
+    resolution: {integrity: sha512-ZO4yOisS0v650O0Qpi7a5eF+0YAVYUT7a58XY2JhMHOm2MYGRXgOKprNjNEeIx1pAdsG0qVmU2g2+fvTr6FtLA==}
+    engines: {node: '>=14.0.0'}
+
+  clipper2-wasm@0.2.1:
+    resolution: {integrity: sha512-WXkKLsfLtB0952jVky77xgqCcNRa641aDZDtB0vmU6wiaUd45nb1aQpqz21JJMUg4uXkjAYPCOF3iH5lMfS9tw==}
 
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
@@ -411,6 +427,8 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@types/emscripten@1.41.5': {}
+
   '@types/stats.js@0.17.4': {}
 
   '@types/three@0.181.0':
@@ -426,6 +444,12 @@ snapshots:
   '@types/webxr@0.5.24': {}
 
   '@webgpu/types@0.1.66': {}
+
+  clipper2-ts@1.5.4-8.578ca4d: {}
+
+  clipper2-wasm@0.2.1:
+    dependencies:
+      '@types/emscripten': 1.41.5
 
   detect-libc@2.1.2: {}
 

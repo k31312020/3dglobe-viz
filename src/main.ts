@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Delaunay2D, type Vec2 } from './delaunate';
+import { offsetPolygon } from './offset';
 interface CountryData {
   name: string;
   polygons: LatLon[][];
@@ -16,7 +17,12 @@ interface CountryData {
 let countries: CountryData[] = [];
 
 // --- Types ---
-interface LatLon { lon: number; lat: number; boundary?: boolean, boundaryIndex?: number }
+export interface LatLon {
+  lon: number; lat: number; 
+  boundary?: boolean, 
+  boundaryIndex?: number,
+  offset?: boolean
+}
 interface Vec3 { x: number; y: number; z: number; }
 
 function randomColor(): string {
@@ -104,24 +110,24 @@ function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx
   if (dx === 0 && dy === 0) {
     const dxp = px - ax;
     const dyp = py - ay;
-    return Math.sqrt(dxp*dxp + dyp*dyp);
+    return Math.sqrt(dxp * dxp + dyp * dyp);
   }
 
   // t = projection of P onto AB
-  const t = ((px - ax) * dx + (py - ay) * dy) / (dx*dx + dy*dy);
+  const t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
 
   if (t <= 0) {
     // closest to A
     const dxp = px - ax;
     const dyp = py - ay;
-    return Math.sqrt(dxp*dxp + dyp*dyp);
+    return Math.sqrt(dxp * dxp + dyp * dyp);
   }
 
   if (t >= 1) {
     // closest to B
     const dxp = px - bx;
     const dyp = py - by;
-    return Math.sqrt(dxp*dxp + dyp*dyp);
+    return Math.sqrt(dxp * dxp + dyp * dyp);
   }
 
   // closest point lies on segment
@@ -129,21 +135,72 @@ function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx
   const cy = ay + t * dy;
   const dxp = px - cx;
   const dyp = py - cy;
-  return Math.sqrt(dxp*dxp + dyp*dyp);
+  return Math.sqrt(dxp * dxp + dyp * dyp);
+}
+
+function meanCentre(polygon: LatLon[]): LatLon {
+  let totalLon = 0;
+  let totalLat = 0;
+  const totalPoints = polygon.length;
+
+  for (let i = 0; i < polygon.length; i++) {
+    totalLon += polygon[i].lon;
+    totalLat += polygon[i].lat;
+  }
+
+  return {
+    lat: totalLat / totalPoints,
+    lon: totalLon / totalPoints,
+    boundary: false,
+    boundaryIndex: -1
+  }
+}
+
+function offsetBoundary(centre: LatLon, point: LatLon, offsetFactor: number = 0.1): LatLon {
+  const x2 = point.lon > centre.lon ? point.lon : centre.lon;
+  const x1 = point.lon > centre.lon ? centre.lon : point.lon;
+
+  const y2 = point.lat > centre.lat ? point.lat : centre.lat;
+  const y1 = point.lat > centre.lat ? centre.lat : point.lat;
+
+  return {
+    lat: y1 + (y2 - y1) * offsetFactor / 2,
+    lon: x1 + (x2 - x1) * offsetFactor / 2,
+    boundary: false,
+    boundaryIndex: -1
+  }
 }
 
 function samplePointsInPolygon(polygon: LatLon[], num: number, offset = 0): LatLon[] {
   let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
-  
-  for (const p of polygon) {
-    minLat = Math.min(minLat, p.lat);
-    minLon = Math.min(minLon, p.lon);
-    maxLat = Math.max(maxLat, p.lat);
-    maxLon = Math.max(maxLon, p.lon);
-  }
-  
+
+  const polygonOffsetBoundary: LatLon[] = offsetPolygon(polygon, 10000);
+
   // include original polygon in the triangulation
-  const pts: LatLon[] = polygon.map((p, i) => ({ lat: p.lat, lon: p.lon, boundary: true, boundaryIndex: i }));
+  let pts: LatLon[] = polygon.map((p, i) => ({ lat: p.lat, lon: p.lon, boundary: true, boundaryIndex: i }));
+
+  // pts.concat(...polygonOffsetBoundary);
+  // for (let i = 0; i < polygon.length - 1; i++) {
+  //   const currentMid = midPoint(polygon[i], polygon[i + 1]);
+  //   const offset = offsetBoundary(centre, currentMid);
+  //   offset?.lat && offset?.lon && pts.push({ lat: offset.lat, lon: offset.lon }) && polygonOffsetBoundary.push(offset);
+  // }
+
+  pts = [...pts, ...polygonOffsetBoundary];
+
+  // for (let i = 0; i < polygon.length; i++) {
+  //   minLat = Math.min(minLat, polygon[i].lat);
+  //   minLon = Math.min(minLon, polygon[i].lon);
+  //   maxLat = Math.max(maxLat, polygon[i].lat);
+  //   maxLon = Math.max(maxLon, polygon[i].lon);
+  // }
+
+  for (let i = 0; i < polygonOffsetBoundary.length; i++) {
+    minLat = Math.min(minLat, polygonOffsetBoundary[i].lat);
+    minLon = Math.min(minLon, polygonOffsetBoundary[i].lon);
+    maxLat = Math.max(maxLat, polygonOffsetBoundary[i].lat);
+    maxLon = Math.max(maxLon, polygonOffsetBoundary[i].lon);
+  }
 
   while (pts.length < num) {
     const lat = minLat + Math.random() * (maxLat - minLat);
@@ -241,7 +298,7 @@ async function regenerate() {
   triGroup.clear();
   surfaceGroup.clear();
   for (const country of countries) {
-    for(let i = 0; i < country.polygons.length; i ++) {
+    for (let i = 0; i < country.polygons.length; i++) {
       drawCountry(country, i);
     }
   }
@@ -257,6 +314,18 @@ function polygonArea2D(polygon: LatLon[]): number {
   return Math.abs(area) / 2;
 }
 
+function midPoint(pointA: LatLon, pointB: LatLon) {
+  const midPoint: LatLon = {
+    lat: 0,
+    lon: 0
+  };
+  midPoint.lat = (pointA.lat + pointB.lat) / 2;
+  midPoint.lon = (pointA.lon + pointB.lon) / 2;
+  midPoint.boundary = false;
+  midPoint.boundaryIndex = -1;
+  return midPoint;
+}
+
 function generateCountryData() {
   for (const country of countries) {
     country.points = [];
@@ -269,7 +338,7 @@ function generateCountryData() {
         country.triangles.push([]);
         continue;
       }
-      
+
       const numOfIntermediatePoints = Math.min(1000, Math.max(polygonArea2D(polygon) * 2, 100));
       const points = samplePointsInPolygon(polygon, numOfIntermediatePoints);
       const flat = points.map(p => ({ x: p.lon, y: p.lat }));
@@ -306,11 +375,12 @@ function drawCountry(country: CountryData, index: number) {
   const colors: number[] = [];
   const colorBoundary = new THREE.Color(0xff0000);
   const colorInternal = new THREE.Color(0xffcc00);
+  const colorOffset = new THREE.Color(0x6feb17);
 
   for (let i = 0; i < country.spherePoints[index].length; i++) {
     const p = country.spherePoints[index][i];
     positions.push(p.x, p.y, p.z);
-    const c = country.points[index][i].boundary ? colorBoundary : colorInternal;
+    const c = country.points[index][i].boundary ? colorBoundary : country.points[index][i].offset ? colorOffset : colorInternal;
     colors.push(c.r, c.g, c.b);
   }
 
