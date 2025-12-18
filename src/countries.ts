@@ -11,6 +11,10 @@ export async function loadAllCountries() {
   const res = await fetch('/public/countries.geo.json');
   const geojson = await res.json();
 
+  const meshColorUSA = randomColor();
+
+  const meshColorCanada = randomColor();
+
   countries = geojson.features.map((feature: any) => {
     let coords: number[][][] = [];
 
@@ -24,8 +28,12 @@ export async function loadAllCountries() {
       ring.map(([lon, lat]) => ({ lon, lat }))
     );
 
+    const name =feature.properties?.ADMIN || feature.properties?.name || "Unknown";
+
+    const color = name.includes('America') ? meshColorUSA : name.includes('Canada') ? meshColorCanada : randomColor();
+
     return {
-      name: feature.properties?.ADMIN || feature.properties?.name || "Unknown",
+      name,
       polygons,
       points: [],
       spherePoints: [],
@@ -33,7 +41,7 @@ export async function loadAllCountries() {
       pointsMesh: [],
       edges: [],
       mesh: [],
-      color: randomColor()
+      color
     };
   });
 }
@@ -132,16 +140,18 @@ export function samplePointsInPolygon(polygon: LatLon[], num: number, offset = 0
 
 export function generateCountryData() {
   for (const country of countries) {
+    console.log(country.name)
     country.points = [];
     country.spherePoints = [];
     country.triangles = [];
     for (const polygon of country.polygons) {
-      if (polygon.length < 20) {
+      if (polygon.length < 10) {
         country.points.push([]);
         country.spherePoints.push([]);
         country.triangles.push([]);
         continue;
       }
+
       const numOfIntermediatePoints = Math.min(LARGE_COUNTRIES.includes(country.name) ? 2000 : 1000, Math.max(polygonArea2D(polygon) * 2, 100));
       const points = samplePointsInPolygon(polygon, numOfIntermediatePoints);
       const flat = points.map(p => ({ x: p.lon, y: p.lat }));

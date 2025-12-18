@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { Delaunay2D } from './delaunate';
 import type { CountryData } from './types';
 import { countries, generateCountryData, isBoundarySequenceTriangle, loadAllCountries } from './countries';
@@ -86,6 +87,61 @@ async function regenerate() {
       drawCountry(country, i);
     }
   }
+}
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(window.innerWidth, window.innerHeight);
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+document.body.appendChild(labelRenderer.domElement);
+
+function getMeshLabelPosition(mesh: THREE.Mesh) {
+  const geometry = mesh.geometry
+  geometry.computeBoundingBox()
+
+  const box = geometry.boundingBox!
+  const center = new THREE.Vector3()
+  box.getCenter(center)
+
+  return center
+}
+
+function drawLabel(name: string, shape: THREE.Mesh) {
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'label';
+  nameDiv.textContent = name;
+  nameDiv.style.color = 'white';
+  nameDiv.style.fontSize = '8px'
+  const nameLabel = new CSS2DObject(nameDiv);
+
+  const horizonThreshold = 0.7
+  const globeCenter = new THREE.Vector3(0, 0, 0)
+
+  const tmpPos = new THREE.Vector3()
+  const tmpCamDir = new THREE.Vector3()
+
+  nameLabel.onBeforeRender = (renderer, scene, camera) => {
+    // World position of the label
+    nameLabel.getWorldPosition(tmpPos)
+
+    // Normal from globe center
+    const normal = tmpPos.sub(globeCenter).normalize()
+
+    // Direction to camera
+    tmpCamDir
+      .copy(camera.position)
+      .sub(globeCenter)
+      .normalize()
+
+    const dot = normal.dot(tmpCamDir)
+
+    nameLabel.element.style.display =
+      dot > horizonThreshold ? 'block' : 'none'
+  }
+
+  nameLabel.position.copy(getMeshLabelPosition(shape));
+  shape.add(nameLabel);
 }
 
 function drawCountry(country: CountryData, index: number) {
@@ -180,6 +236,8 @@ function drawCountry(country: CountryData, index: number) {
   country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: country.color, side: THREE.DoubleSide })));
   country.mesh?.[index] && surfaceGroup.add(country.mesh[index]);
 
+  country.mesh?.length && drawLabel(country.name, country.mesh[0]);
+
   function pushTriSurf(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3, color: THREE.Color) {
     positionsSurf.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
     for (let i = 0; i < 3; i++) colorsSurf.push(color.r, color.g, color.b);
@@ -242,6 +300,7 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
 }
 animate();
 
