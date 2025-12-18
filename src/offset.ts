@@ -1,18 +1,11 @@
-import type { LatLon } from "./main";
-
-export interface Cartesian {
-  x: number;
-  y: number;
-  z: number;
-}
-
+import type { LatLon, Vec3 } from "./types";
 /**
  * Convert latitude, longitude, and optional altitude to Cartesian coordinates.
  * @param latLon Latitude and longitude in degrees, optional altitude in meters
  * @param radius Earth's radius in meters (default 6371000 m)
  * @returns Cartesian coordinates {x, y, z} in meters
  */
-export function latLonToCartesian(latLon: LatLon & {alt?: number}, radius = 6371000): Cartesian {
+export function latLonToCartesian(latLon: LatLon & {alt?: number}, radius = 6371000): Vec3 {
   const { lat, lon, alt = 0 } = latLon;
 
   // Convert degrees to radians
@@ -34,7 +27,7 @@ export function latLonToCartesian(latLon: LatLon & {alt?: number}, radius = 6371
  * @param cart Cartesian coordinates {x, y, z} in meters
  * @returns LatLon {lat, lon, alt} where lat/lon in degrees, alt in meters
  */
-export function cartesianToLatLon(cart: Cartesian): LatLon {
+export function cartesianToLatLon(cart: Vec3): LatLon {
   const { x, y, z } = cart;
 
   const r = Math.sqrt(x * x + y * y + z * z);
@@ -47,7 +40,7 @@ export function cartesianToLatLon(cart: Cartesian): LatLon {
   return { lat, lon };
 }
 
-export function polygonWinding(cart: Cartesian[]): 1 | -1 {
+export function polygonWinding(cart: Vec3[]): 1 | -1 {
   let sum = 0;
 
   for (let i = 0; i < cart.length; i++) {

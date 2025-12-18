@@ -4,7 +4,7 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "node_modules/clipper2-wasm/dist/clipper2z-utils.d.ts"],
+    "types": ["vite/client"],
     "skipLibCheck": true,
 
     /* Bundler mode */
