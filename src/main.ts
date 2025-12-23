@@ -4,7 +4,11 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { Delaunay2D } from './delaunate';
 import type { CountryData } from './types';
 import { countries, generateCountryData, isBoundarySequenceTriangle, loadAllCountries } from './countries';
+import { formatPopulationData, loadCSV } from './helper';
 
+
+const populationCsv = await loadCSV('API_SP.POP.TOTL_DS2_en_csv_v2_34.csv');
+const populationData = formatPopulationData(populationCsv);
 // --- Three.js setup ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -27,7 +31,7 @@ controls.maxDistance = 10;
 const sphere = new THREE.Mesh(
   new THREE.SphereGeometry(1, 64, 64),
   new THREE.MeshStandardMaterial({
-    color: 0x004E7C, transparent: false, opacity: 0.25,
+    color: 0x195F89, transparent: false, opacity: 0.25,
     roughness: 1.0,
     metalness: 0.0,
   })
@@ -82,10 +86,17 @@ async function regenerate() {
   ptsGroup.clear();
   triGroup.clear();
   surfaceGroup.clear();
+  let previousCountry: CountryData | undefined = undefined;
   for (const country of countries) {
+    if(previousCountry && previousCountry.name !== country.name) {
+      const meshIndex = meshNumber[previousCountry.name] || 0;
+      const population = populationData?.countries?.[previousCountry.name]?.['2024'];
+      previousCountry.mesh && drawLabel(previousCountry.name, previousCountry.mesh[meshIndex], population?.population);
+    }
     for (let i = 0; i < country.polygons.length; i++) {
       drawCountry(country, i);
     }
+    previousCountry = country;
   }
 }
 
@@ -107,12 +118,34 @@ function getMeshLabelPosition(mesh: THREE.Mesh) {
   return center
 }
 
-function drawLabel(name: string, shape: THREE.Mesh) {
+function formatPopulationForDisplay(population: number) {
+  if (isNaN(population)) return 'No Data';
+  const populationAsString = String(population);
+  let formatted = '';
+  let distance = 0;
+  for (let i = populationAsString.length - 1; i > -1; i--) {
+    formatted = populationAsString[i] + formatted;
+    distance++;
+    if (distance === 3 && i !== 0) {
+      formatted = ',' + formatted;
+      distance = 0;
+    }
+  }
+  return formatted;
+}
+
+function drawLabel(name: string, shape: THREE.Mesh, population: number) {
   const nameDiv = document.createElement('div');
+  const populationText = document.createElement('p');
+  populationText.style.fontWeight = 'bold';
+  populationText.textContent = formatPopulationForDisplay(population);
   nameDiv.className = 'label';
-  nameDiv.textContent = name;
+  nameDiv.innerHTML = `<p>${name}</p>`;
   nameDiv.style.color = 'white';
-  nameDiv.style.fontSize = '8px'
+  nameDiv.style.fontSize = '8px';
+
+  nameDiv.appendChild(populationText);
+
   const nameLabel = new CSS2DObject(nameDiv);
 
   const horizonThreshold = 0.7
@@ -233,10 +266,11 @@ function drawCountry(country: CountryData, index: number) {
   geomSurf.setAttribute("position", new THREE.Float32BufferAttribute(positionsSurf, 3));
   geomSurf.setAttribute("color", new THREE.Float32BufferAttribute(colorsSurf, 3));
   geomSurf.computeVertexNormals();
-  country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: country.color, side: THREE.DoubleSide })));
+  const population = populationData?.countries?.[country.name]?.['2024'];
+  country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: population?.color || 0xffffff, side: THREE.DoubleSide })));
   country.mesh?.[index] && surfaceGroup.add(country.mesh[index]);
 
-  country.mesh?.length && drawLabel(country.name, country.mesh[0]);
+  console.log(country.name)
 
   function pushTriSurf(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3, color: THREE.Color) {
     positionsSurf.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
@@ -246,6 +280,23 @@ function drawCountry(country: CountryData, index: number) {
     pushTriSurf(a, b, a2, color);
     pushTriSurf(b, b2, a2, color);
   }
+}
+
+let meshNumber: Record<string, number> = {
+  'Indonesia': 7,
+  'China': 1,
+  'North Korea': 1,
+  'Philippines': 1,
+  'Chile': 1,
+  'South Africa': 1,
+  'Angola': 1,
+  'France': 1,
+  'Russia': 1,
+  'Norway': 1,
+  'United Kingdom': 1,
+  'Greece': 1,
+  'Australia': 1,
+  'Antarctica': 7
 }
 
 

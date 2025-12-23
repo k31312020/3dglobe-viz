@@ -140,12 +140,11 @@ export function samplePointsInPolygon(polygon: LatLon[], num: number, offset = 0
 
 export function generateCountryData() {
   for (const country of countries) {
-    console.log(country.name)
     country.points = [];
     country.spherePoints = [];
     country.triangles = [];
     for (const polygon of country.polygons) {
-      if (polygon.length < 10) {
+      if (polygon.length < 5) {
         country.points.push([]);
         country.spherePoints.push([]);
         country.triangles.push([]);
