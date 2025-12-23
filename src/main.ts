@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { Delaunay2D } from './delaunate';
 import type { CountryData } from './types';
 import { countries, generateCountryData, isBoundarySequenceTriangle, loadAllCountries } from './countries';
 import { formatPopulationData, loadCSV } from './helper';
@@ -9,6 +8,7 @@ import { formatPopulationData, loadCSV } from './helper';
 
 const populationCsv = await loadCSV('API_SP.POP.TOTL_DS2_en_csv_v2_34.csv');
 const populationData = formatPopulationData(populationCsv);
+let populationYear = '2024';
 // --- Three.js setup ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -53,45 +53,26 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.2);
 sun.position.set(5, 3, 2);
 scene.add(sun);
 
-// --- Points, triangles ---
-let numRandom = 100;
-
-// --- Draw circumcircles ---
-let showCircles = true;
-function drawCircumcircles(delaunay: Delaunay2D) {
-  circumGroup.clear();
-  if (!showCircles) return;
-
-  for (const t of delaunay.triangles) {
-    if (!t.circum || !isFinite(t.circum.r2)) continue;
-    const c = t.circum;
-    const segments = 32;
-    const points: number[] = [];
-    for (let i = 0; i <= segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      const x = c.x + Math.sqrt(c.r2) * Math.cos(angle);
-      const y = c.y + Math.sqrt(c.r2) * Math.sin(angle);
-      points.push(x, y, 0);
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0xff8800 }));
-    circumGroup.add(line);
-  }
-}
-
-async function regenerate() {
+async function buildScene() {
   await loadAllCountries();
   generateCountryData();
+  surfaceGroup.children.forEach(mesh => {
+    mesh.children
+    .filter(c => c instanceof CSS2DObject)
+    .forEach(label => {
+      mesh.remove(label);
+      label.element.remove(); // IMPORTANT
+    });
+  });
   ptsGroup.clear();
   triGroup.clear();
   surfaceGroup.clear();
   let previousCountry: CountryData | undefined = undefined;
   for (const country of countries) {
-    if(previousCountry && previousCountry.name !== country.name) {
+    if(previousCountry && previousCountry.mesh && previousCountry.name !== country.name) {
       const meshIndex = meshNumber[previousCountry.name] || 0;
-      const population = populationData?.countries?.[previousCountry.name]?.['2024'];
-      previousCountry.mesh && drawLabel(previousCountry.name, previousCountry.mesh[meshIndex], population?.population);
+      const population = populationData?.countries?.[previousCountry.name]?.[populationYear];
+      previousCountry.label = drawLabel(previousCountry.name, previousCountry.mesh[meshIndex], population?.population);
     }
     for (let i = 0; i < country.polygons.length; i++) {
       drawCountry(country, i);
@@ -134,48 +115,51 @@ function formatPopulationForDisplay(population: number) {
   return formatted;
 }
 
-function drawLabel(name: string, shape: THREE.Mesh, population: number) {
+function drawLabel(
+  name: string,
+  shape: THREE.Mesh,
+  population: number
+): CSS2DObject {
+
   const nameDiv = document.createElement('div');
-  const populationText = document.createElement('p');
-  populationText.style.fontWeight = 'bold';
-  populationText.textContent = formatPopulationForDisplay(population);
   nameDiv.className = 'label';
-  nameDiv.innerHTML = `<p>${name}</p>`;
   nameDiv.style.color = 'white';
   nameDiv.style.fontSize = '8px';
 
-  nameDiv.appendChild(populationText);
+  const nameP = document.createElement('p');
+  nameP.textContent = name;
 
-  const nameLabel = new CSS2DObject(nameDiv);
+  const populationP = document.createElement('p');
+  populationP.style.fontWeight = 'bold';
+  populationP.textContent = formatPopulationForDisplay(population);
 
-  const horizonThreshold = 0.7
-  const globeCenter = new THREE.Vector3(0, 0, 0)
+  nameDiv.appendChild(nameP);
+  nameDiv.appendChild(populationP);
 
-  const tmpPos = new THREE.Vector3()
-  const tmpCamDir = new THREE.Vector3()
+  const label = new CSS2DObject(nameDiv);
 
-  nameLabel.onBeforeRender = (renderer, scene, camera) => {
-    // World position of the label
-    nameLabel.getWorldPosition(tmpPos)
+  // store reference for later updates
+  (label as any).populationEl = populationP;
 
-    // Normal from globe center
-    const normal = tmpPos.sub(globeCenter).normalize()
+  // horizon culling (your existing logic)
+  const tmpPos = new THREE.Vector3();
+  const tmpCamDir = new THREE.Vector3();
+  const globeCenter = new THREE.Vector3();
 
-    // Direction to camera
-    tmpCamDir
-      .copy(camera.position)
-      .sub(globeCenter)
-      .normalize()
+  label.onBeforeRender = (_, __, camera) => {
+    label.getWorldPosition(tmpPos);
+    const normal = tmpPos.sub(globeCenter).normalize();
+    tmpCamDir.copy(camera.position).sub(globeCenter).normalize();
+    label.element.style.display =
+      normal.dot(tmpCamDir) > 0.7 ? 'block' : 'none';
+  };
 
-    const dot = normal.dot(tmpCamDir)
+  label.position.copy(getMeshLabelPosition(shape));
+  shape.add(label);
 
-    nameLabel.element.style.display =
-      dot > horizonThreshold ? 'block' : 'none'
-  }
-
-  nameLabel.position.copy(getMeshLabelPosition(shape));
-  shape.add(nameLabel);
+  return label;
 }
+
 
 function drawCountry(country: CountryData, index: number) {
   // --- Points ---
@@ -266,11 +250,9 @@ function drawCountry(country: CountryData, index: number) {
   geomSurf.setAttribute("position", new THREE.Float32BufferAttribute(positionsSurf, 3));
   geomSurf.setAttribute("color", new THREE.Float32BufferAttribute(colorsSurf, 3));
   geomSurf.computeVertexNormals();
-  const population = populationData?.countries?.[country.name]?.['2024'];
+  const population = populationData?.countries?.[country.name]?.[populationYear];
   country.mesh?.push(new THREE.Mesh(geomSurf, new THREE.MeshStandardMaterial({ color: population?.color || 0xffffff, side: THREE.DoubleSide })));
   country.mesh?.[index] && surfaceGroup.add(country.mesh[index]);
-
-  console.log(country.name)
 
   function pushTriSurf(v1: THREE.Vector3, v2: THREE.Vector3, v3: THREE.Vector3, color: THREE.Color) {
     positionsSurf.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
@@ -282,7 +264,7 @@ function drawCountry(country: CountryData, index: number) {
   }
 }
 
-let meshNumber: Record<string, number> = {
+const meshNumber: Record<string, number> = {
   'Indonesia': 7,
   'China': 1,
   'North Korea': 1,
@@ -299,25 +281,13 @@ let meshNumber: Record<string, number> = {
   'Antarctica': 7
 }
 
-
-// --- UI ---
-const slider = document.createElement('input');
-slider.type = 'range';
-slider.min = '100';
-slider.max = '4000';
-slider.value = String(numRandom);
-slider.style.position = 'fixed';
-slider.style.left = '10px';
-slider.style.top = '10px';
-slider.style.zIndex = '10';
-document.body.appendChild(slider);
-slider.addEventListener('input', () => { numRandom = +slider.value; regenerate(); });
-
 const uiContainer = document.createElement('div');
 uiContainer.style.position = 'fixed';
+uiContainer.style.fontFamily = 'Arial';
+uiContainer.style.fontSize = '12px';
 uiContainer.style.top = '50px';
 uiContainer.style.left = '10px';
-uiContainer.style.backgroundColor = 'rgba(0,0,0,0.5)';
+uiContainer.style.backgroundColor = 'rgba(0,0,0,0.4)';
 uiContainer.style.padding = '10px';
 uiContainer.style.borderRadius = '5px';
 uiContainer.style.zIndex = '10';
@@ -325,6 +295,8 @@ uiContainer.style.color = '#fff';
 document.body.appendChild(uiContainer);
 
 function createToggle(labelText: string, targetGroup: THREE.Group, defaultValue = true) {
+  targetGroup.visible = defaultValue;
+
   const label = document.createElement('label');
   label.style.display = 'block';
   label.style.cursor = 'pointer';
@@ -340,13 +312,64 @@ function createToggle(labelText: string, targetGroup: THREE.Group, defaultValue 
   uiContainer.appendChild(label);
 }
 
-createToggle('Show Points', ptsGroup, true);
-createToggle('Show Edges', triGroup, true);
-createToggle('Show Circumcircles', circumGroup, true);
+export function createRangeSlider({
+  min = 1960,
+  max = 2024,
+  step = 1,
+  value = max,
+  onChange
+}: {
+  min?: number;
+  max?: number;
+  step?: number;
+  value?: number;
+  onChange?: (value: number) => void;
+}) {
+  const slider = document.createElement('input');
+  slider.type = 'range';
+
+  slider.min = String(min);
+  slider.max = String(max);
+  slider.step = String(step);
+  slider.value = String(value);
+
+  slider.addEventListener('input', () => {
+    onChange?.(Number(slider.value));
+  });
+
+  uiContainer.appendChild(slider);
+}
+
+function updatePopulationYear() {
+  for (const country of countries) {
+    const pop = populationData?.countries?.[country.name]?.[populationYear];
+    if (!pop) continue;
+
+    // update mesh colors
+    country.mesh?.forEach(mesh => {
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      material.color.set(pop.color);
+      material.needsUpdate = true;
+    });
+
+    // update label text
+    if (country.label) {
+      const popEl = (country.label as any).populationEl as HTMLParagraphElement;
+      popEl.textContent = formatPopulationForDisplay(pop.population);
+    }
+  }
+}
+
+createToggle('Show Points', ptsGroup, false);
+createToggle('Show Edges', triGroup, false);
 createToggle('Show Surfaces', surfaceGroup, true);
+createRangeSlider({onChange: (value) => {
+  populationYear = String(value);
+  updatePopulationYear();
+}});
 
 // --- Start ---
-regenerate();
+buildScene();
 function animate() {
   requestAnimationFrame(animate);
   controls.update();

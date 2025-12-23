@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { CSS2DObject } from 'three/examples/jsm/Addons.js';
 
 export interface CountryData {
   name: string;
@@ -10,6 +11,7 @@ export interface CountryData {
   mesh?: THREE.Mesh[];       // optional, for the surface
   edges?: THREE.LineSegments[]; // optional, for edges
   color: string;
+  label?: CSS2DObject;
 }
 
 export interface LatLon {
