@@ -1,4 +1,3 @@
-import { countries } from "./countries";
 import type { Vec3 } from "./types";
 import * as THREE from 'three';
 
@@ -37,7 +36,7 @@ function parsePopulationToNumber(population: string) {
   return Number(population);
 }
 
-const POPULATION_CATEGORY = [
+export const POPULATION_CATEGORY = [
   {
     min: 0,
     max: 500_000,

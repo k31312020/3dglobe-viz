@@ -53,16 +53,17 @@ export function polygonWinding(cart: Vec3[]): 1 | -1 {
   return sum > 0 ? 1 : -1;
 }
 
-
 export const offsetPolygon = (polygon: LatLon[], offsetDistance = 1): LatLon[] => {
-    const winding = polygonWinding(polygon.map(p => latLonToCartesian(p)));
+    const winding = polygonWinding(polygon.map(p => ({x: p.lon, y: p.lat, z: 0})));
     const offsetPolygon: LatLon[] = [];
     for(let i = 0; i < (polygon.length - 1); i++) {
-        const {x:x1,y:y1, z: z1} = latLonToCartesian(polygon[i]);
-        const {x:x2,y:y2} = latLonToCartesian(polygon[i+1]);
+        const p1 = polygon[i];
+        const p2 = polygon[i+1];
 
-        const vx = x2 - x1;
-        const vy = y2 - y1;
+        const vx = p2.lon - p1.lon;
+        const vy = p2.lat - p1.lat;
+
+        if (Math.abs(vx) < 0.1 || Math.abs(vy) < 0.1) continue;
 
         const magnitude = Math.sqrt(vx*vx+vy*vy);
 
@@ -72,13 +73,13 @@ export const offsetPolygon = (polygon: LatLon[], offsetDistance = 1): LatLon[] =
         };
 
         const offset = {
-            x:offsetDistance * normalizedNormal.nx * winding,
-            y:offsetDistance * normalizedNormal.ny * winding
+            lon:offsetDistance * normalizedNormal.nx * winding,
+            lat:offsetDistance * normalizedNormal.ny * winding
         }
 
-        const {lat, lon} = cartesianToLatLon({x: x1 + offset.x, y: y1 + offset.y, z: z1});
+        const point = {lon: p1.lon + offset.lon, lat: p1.lat + offset.lat, offset: true};
 
-        offsetPolygon.push({lon, lat, offset: true});
+        offsetPolygon.push(point);
     }
     return offsetPolygon;
 }

@@ -1,3 +1,5 @@
+// this module helps load the countries GeoJSON and setup for rendering
+
 import { latLonToSphere, randomColor } from "./helper";
 import { offsetPolygon } from "./offset";
 import type { CountryData, LatLon } from "./types";
@@ -47,28 +49,37 @@ export async function loadAllCountries() {
 }
 
 export function pointInPolygon(point: LatLon, polygon: LatLon[]): boolean {
+  if (!point || !polygon || polygon.length < 3) return false; // guard
+
   let inside = false;
+  const epsilon = 1e-12;
 
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
     const xi = polygon[i].lon, yi = polygon[i].lat;
     const xj = polygon[j].lon, yj = polygon[j].lat;
+
     const intersect = ((yi > point.lat) !== (yj > point.lat)) &&
-      (point.lon < (xj - xi) * (point.lat - yi) / (yj - yi) + xi);
+      (point.lon < (xj - xi) * (point.lat - yi) / ((yj - yi) + epsilon) + xi);
     if (intersect) inside = !inside;
   }
 
   return inside;
 }
 
+
 export function isAwayFromEdges(p: LatLon, polygon: LatLon[], minDist: number): boolean {
   for (let i = 0; i < polygon.length; i++) {
     const a = polygon[i];
     const b = polygon[(i + 1) % polygon.length];
 
+    const {x: px, y: py} = latLonToSphere(p.lat, p.lon);
+    const {x: ax, y: ay} = latLonToSphere(a.lat, a.lon);
+    const {x: bx, y: by} = latLonToSphere(b.lat, b.lon);
+
     const d = pointSegmentDistance(
-      p.lon, p.lat,
-      a.lon, a.lat,
-      b.lon, b.lat
+      px, py,
+      ax, ay,
+      bx, by
     );
 
     if (d < minDist) return false;
@@ -112,31 +123,38 @@ function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx
   return Math.sqrt(dxp * dxp + dyp * dyp);
 }
 
-export function samplePointsInPolygon(polygon: LatLon[], num: number, offset = 0): LatLon[] {
+export function samplePointsInPolygon(polygon: LatLon[], num: number): LatLon[] {
   let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
-
-  const polygonOffsetBoundary: LatLon[] = offsetPolygon(polygon, 10000);
-
   // include original polygon in the triangulation
   let pts: LatLon[] = polygon.map((p, i) => ({ lat: p.lat, lon: p.lon, boundary: true, boundaryIndex: i }));
 
-  pts = [...pts, ...polygonOffsetBoundary];
+  if (polygon.length > 100) {
+    const polygonOffsetBoundary: LatLon[] = offsetPolygon(polygon, 0.5).filter(p => pointInPolygon(p, polygon));
+    pts = [...pts, ...polygonOffsetBoundary];
 
-  for (let i = 0; i < polygonOffsetBoundary.length; i++) {
-    minLat = Math.min(minLat, polygonOffsetBoundary[i].lat);
-    minLon = Math.min(minLon, polygonOffsetBoundary[i].lon);
-    maxLat = Math.max(maxLat, polygonOffsetBoundary[i].lat);
-    maxLon = Math.max(maxLon, polygonOffsetBoundary[i].lon);
+    for (let i = 0; i < polygonOffsetBoundary.length; i++) {
+      minLat = Math.min(minLat, polygonOffsetBoundary[i].lat);
+      minLon = Math.min(minLon, polygonOffsetBoundary[i].lon);
+      maxLat = Math.max(maxLat, polygonOffsetBoundary[i].lat);
+      maxLon = Math.max(maxLon, polygonOffsetBoundary[i].lon); 
+    }
+  } else {
+    for (let i = 0; i < polygon.length; i++) {
+      minLat = Math.min(minLat, polygon[i].lat);
+      minLon = Math.min(minLon, polygon[i].lon);
+      maxLat = Math.max(maxLat, polygon[i].lat);
+      maxLon = Math.max(maxLon, polygon[i].lon); 
+    }
   }
 
   while (pts.length < num) {
     const lat = minLat + Math.random() * (maxLat - minLat);
     const lon = minLon + Math.random() * (maxLon - minLon);
-    const p = { lat, lon };
-    if (pointInPolygon({ lat, lon }, polygon) && isAwayFromEdges(p, polygon, offset)) pts.push({ lat, lon });
+    if (pointInPolygon({ lat, lon }, polygon)) pts.push({ lat, lon });
   }
   return pts;
 }
+
 
 export function generateCountryData() {
   for (const country of countries) {
@@ -151,9 +169,11 @@ export function generateCountryData() {
         continue;
       }
 
-      const numOfIntermediatePoints = Math.min(LARGE_COUNTRIES.includes(country.name) ? 2000 : 1000, Math.max(polygonArea2D(polygon) * 2, 100));
+      const numOfIntermediatePoints = Math.min(LARGE_COUNTRIES.includes(country.name) ? 2000 : 1000, Math.max(polygonArea2D(polygon), 100));
       const points = samplePointsInPolygon(polygon, numOfIntermediatePoints);
+
       const flat = points.map(p => ({ x: p.lon, y: p.lat }));
+
       const triangles = triangulate2D(flat);
 
       country.points.push(points);
@@ -173,21 +193,8 @@ function polygonArea2D(polygon: LatLon[]): number {
   return Math.abs(area) / 2;
 }
 
-function areSequential(a: LatLon, b: LatLon, polygon: LatLon[]): boolean {
-  const isInsidePolygon = pointInPolygon(a, polygon) && pointInPolygon(b, polygon);
-  if (!a.boundary || !b.boundary) return !isInsidePolygon;
-
-  const diff = Math.abs(a.boundaryIndex! - b.boundaryIndex!);
-  return (diff !== 1) || !isInsidePolygon;
-}
-
-export function isBoundarySequenceTriangle(pA: LatLon, pB: LatLon, pC: LatLon, polygon: LatLon[]): boolean {
-  const ab = areSequential(pA, pB, polygon);
-  const bc = areSequential(pB, pC, polygon);
-  const ca = areSequential(pC, pA, polygon);
-
-  // triangle qualifies if *at least* one pair is sequential
-  return (ab && bc) || (ab && ca) || (bc && ca);
+export function allEdgesAreBoundary(pA: LatLon, pB: LatLon, pC: LatLon): boolean {
+  return (!!pA.boundary && !!pB.boundary && !!pC.boundary);
 }
 
 // --- Triangulate 2D using Delaunay ---
@@ -195,6 +202,5 @@ function triangulate2D(flatPoints: Vec2[]): [number, number, number][] {
   const delaunay = new Delaunay2D(flatPoints);
   for (let i = 0; i < flatPoints.length; i++) delaunay.insertPoint(i);
   delaunay.finalize();
-//   drawCircumcircles(delaunay); // Draw circumcircles in 2D
   return delaunay.triangles.map(t => [t.a, t.b, t.c] as [number, number, number]);
 }

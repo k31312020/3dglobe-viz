@@ -1,9 +1,12 @@
 import * as THREE from 'three';
+// @ts-ignore
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import type { CountryData } from './types';
-import { countries, generateCountryData, isBoundarySequenceTriangle, loadAllCountries } from './countries';
+import { countries, generateCountryData, allEdgesAreBoundary, loadAllCountries } from './countries';
 import { formatPopulationData, loadCSV } from './helper';
+import { createControlPanel, createPopulationLegend, createRangeSlider, createToggle } from './legend';
+import { MeshNumber } from './constants';
 
 
 const populationCsv = await loadCSV('API_SP.POP.TOTL_DS2_en_csv_v2_34.csv');
@@ -70,7 +73,7 @@ async function buildScene() {
   let previousCountry: CountryData | undefined = undefined;
   for (const country of countries) {
     if(previousCountry && previousCountry.mesh && previousCountry.name !== country.name) {
-      const meshIndex = meshNumber[previousCountry.name] || 0;
+      const meshIndex = MeshNumber[previousCountry.name] || 0;
       const population = populationData?.countries?.[previousCountry.name]?.[populationYear];
       previousCountry.label = drawLabel(previousCountry.name, previousCountry.mesh[meshIndex], population?.population);
     }
@@ -179,7 +182,7 @@ function drawCountry(country: CountryData, index: number) {
 
   ptsGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   ptsGeom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  country.pointsMesh?.push(new THREE.Points(ptsGeom, new THREE.PointsMaterial({ size: 0.01, vertexColors: true })));
+  country.pointsMesh?.push(new THREE.Points(ptsGeom, new THREE.PointsMaterial({ size: 0.005, vertexColors: true })));
   country.pointsMesh?.[index] && ptsGroup.add(country.pointsMesh[index]);
 
   // --- Triangles ---
@@ -188,11 +191,10 @@ function drawCountry(country: CountryData, index: number) {
     const [a, b, c] = t;
     const A = country.spherePoints[index][a], B = country.spherePoints[index][b], C = country.spherePoints[index][c];
     // Only draw if at least one point is not a boundary
-    const polygonEdgeTri = isBoundarySequenceTriangle(
+    const polygonEdgeTri = allEdgesAreBoundary(
       country.points[index][a],
       country.points[index][b],
-      country.points[index][c],
-      country.polygons[index]
+      country.points[index][c]
     );
 
     if (polygonEdgeTri) continue;
@@ -212,16 +214,15 @@ function drawCountry(country: CountryData, index: number) {
   // --- Surface ---
   const positionsSurf: number[] = [];
   const colorsSurf: number[] = [];
-  const extrudeHeight = 0.02;
+  const extrudeHeight = 0.01;
 
   for (const t of country.triangles[index]) {
     const [a, b, c] = t;
 
-    const polygonEdgeTri = isBoundarySequenceTriangle(
+    const polygonEdgeTri = allEdgesAreBoundary(
       country.points[index][a],
       country.points[index][b],
       country.points[index][c],
-      country.polygons[index]
     );
 
     if (polygonEdgeTri) continue;
@@ -264,82 +265,6 @@ function drawCountry(country: CountryData, index: number) {
   }
 }
 
-const meshNumber: Record<string, number> = {
-  'Indonesia': 7,
-  'China': 1,
-  'North Korea': 1,
-  'Philippines': 1,
-  'Chile': 1,
-  'South Africa': 1,
-  'Angola': 1,
-  'France': 1,
-  'Russia': 1,
-  'Norway': 1,
-  'United Kingdom': 1,
-  'Greece': 1,
-  'Australia': 1,
-  'Antarctica': 7
-}
-
-const uiContainer = document.createElement('div');
-uiContainer.style.position = 'fixed';
-uiContainer.style.fontFamily = 'Arial';
-uiContainer.style.fontSize = '12px';
-uiContainer.style.top = '50px';
-uiContainer.style.left = '10px';
-uiContainer.style.backgroundColor = 'rgba(0,0,0,0.4)';
-uiContainer.style.padding = '10px';
-uiContainer.style.borderRadius = '5px';
-uiContainer.style.zIndex = '10';
-uiContainer.style.color = '#fff';
-document.body.appendChild(uiContainer);
-
-function createToggle(labelText: string, targetGroup: THREE.Group, defaultValue = true) {
-  targetGroup.visible = defaultValue;
-
-  const label = document.createElement('label');
-  label.style.display = 'block';
-  label.style.cursor = 'pointer';
-
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = defaultValue;
-  checkbox.style.marginRight = '5px';
-  checkbox.addEventListener('change', () => { targetGroup.visible = checkbox.checked; });
-
-  label.appendChild(checkbox);
-  label.appendChild(document.createTextNode(labelText));
-  uiContainer.appendChild(label);
-}
-
-export function createRangeSlider({
-  min = 1960,
-  max = 2024,
-  step = 1,
-  value = max,
-  onChange
-}: {
-  min?: number;
-  max?: number;
-  step?: number;
-  value?: number;
-  onChange?: (value: number) => void;
-}) {
-  const slider = document.createElement('input');
-  slider.type = 'range';
-
-  slider.min = String(min);
-  slider.max = String(max);
-  slider.step = String(step);
-  slider.value = String(value);
-
-  slider.addEventListener('input', () => {
-    onChange?.(Number(slider.value));
-  });
-
-  uiContainer.appendChild(slider);
-}
-
 function updatePopulationYear() {
   for (const country of countries) {
     const pop = populationData?.countries?.[country.name]?.[populationYear];
@@ -360,13 +285,16 @@ function updatePopulationYear() {
   }
 }
 
-createToggle('Show Points', ptsGroup, false);
-createToggle('Show Edges', triGroup, false);
-createToggle('Show Surfaces', surfaceGroup, true);
-createRangeSlider({onChange: (value) => {
+// create control panel and legend
+const cpanel = createControlPanel();
+createToggle(cpanel, 'Show Points', ptsGroup, false);
+createToggle(cpanel, 'Show Edges', triGroup, false);
+createToggle(cpanel, 'Show Surfaces', surfaceGroup, true);
+createRangeSlider({cpanel, onChange: (value) => {
   populationYear = String(value);
   updatePopulationYear();
 }});
+createPopulationLegend();
 
 // --- Start ---
 buildScene();
