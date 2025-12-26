@@ -9,13 +9,23 @@ import { createControlPanel, createPopulationLegend, createRangeSlider, createTo
 import { MeshNumber } from './constants';
 
 
+function getCameraZ() {
+  if (window.matchMedia('(max-width: 480px)').matches) {
+    return 6;      // phones
+  }
+  if (window.matchMedia('(max-width: 1024px)').matches) {
+    return 4;      // tablets
+  }
+  return window.innerWidth / 400; // desktop default
+}
+
 const populationCsv = await loadCSV('API_SP.POP.TOTL_DS2_en_csv_v2_34.csv');
 const populationData = formatPopulationData(populationCsv);
 let populationYear = '2024';
 // --- Three.js setup ---
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 0, 3);
+camera.position.set(0, 0, getCameraZ());
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -27,8 +37,8 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.enablePan = true;
-controls.minDistance = 0;
-controls.maxDistance = 10;
+controls.minDistance = 2;
+controls.maxDistance = 8;
 
 // Sphere
 const sphere = new THREE.Mesh(

@@ -36,7 +36,7 @@ export function createToggle(cpanel: HTMLDivElement, labelText: string, targetGr
     width: '14px',
     height: '14px',
     borderRadius: '3px',
-    border: '1px solid #4da3ff',
+    border: '1px solid #000',
     display: 'grid',
     placeContent: 'center',
     cursor: 'pointer'

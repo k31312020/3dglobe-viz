@@ -94,7 +94,7 @@ export class Delaunay2D {
 
     // Create new triangles
     for (const [a, b] of polygon) {
-      const t = { a, b, c: idx, circum: undefined };
+      const t: Triangle = { a, b, c: idx, circum: {x:0, y:0, r2:0} };
       t.circum = this.computeCircum(a, b, idx);
       this.triangles.push(t);
     }
