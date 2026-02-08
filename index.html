@@ -5,8 +5,185 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>three-d-maps</title>
+    <link rel="stylesheet" href="./src/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+    />
   </head>
   <body>
+    <!-- <div id="guide" class="guide">
+      <h1>Creating a 3D globe with surfaces</h1>
+      <h2>Some context</h2>
+      <p>
+        This section is a continuation of a previous article called "Rendering
+        the globe using React-three-fiber" The main intent of starting project
+        related to rendering the globe in the first place was to nicely
+        visualize global data in 3D. One place where I fell short last time was
+        rendering surfaces. I did not have a clue how they worked (not that I
+        fully understand it now) so I ended up rendering just the lines. Also, I
+        am glad that everything I learned up to that point did not go to waste.
+      </p>
+      <p>
+        In the last project I could not event get to the data viz part but
+        rendering lines, loading and preparing all the data has helped me a lot
+        for this project.
+      </p>
+      <h2>What am I going to build?</h2>
+      <p>
+        So the main idea is to have a 3D globel (with nice surfaces for each
+        coutry) and then load some interesting data onto it for visualization.
+        One of the things I also wanted to include in the visualisation was to
+        show data as extruded polygons for each country based on their values.
+        However, when I actually reached to a point where I could load data onto
+        my 3D globe there was a huge problem with this approach. This was mainly
+        because of the type of dataset I wanted to use which was the global
+        population by country over time. While there was nothing wrong with
+        rendering the polygons and the dataset, I had extrusions which shot up
+        to the moon and some which barely had extrusions. This was due to the
+        extremely wide difference between population values. I ended up using
+        heat maps for the visualisation instead which should have been really
+        ovbious.
+      </p>
+      <h2>What do I need to render a proper 3D globe with surfaces?</h2>
+      <ul>
+        <li>
+          We need lat lon data for rendering (we are going to use the same data
+          from last project)
+        </li>
+        <li>
+          A tool to build and compose my 3D scene. I am using Threejs which
+          makes it much easier to get things done.
+        </li>
+        <li>
+          We need a do triangulation, because without triangles you cannot
+          create surfaces. We are going to use the Bowyer Watson algorithm to
+          achive this (More on this later)
+        </li>
+        <li>
+          A nice dataset to visualize (I am going to use the population over
+          last 60 years dataset from WorldBank)
+        </li>
+      </ul>
+
+      <div>
+        <p>
+          I did use AI for this project and it managed to help me with most of
+          the basic parts, saved a lot of time but miserably failed for some of
+          them which I will point out later.
+        </p>
+        <p>
+          I have nicely documented each step here with the code and the actual
+          render side by side so that it serves as a good reference when I come
+          back to take a peek and ofcourse for anyone who might end up reading
+          this article
+        </p>
+      </div>
+
+      <div>
+        <h2>How are surfaces are drawn?</h2>
+        <p>
+          All objects around us including ourselves are made up of surfaces.
+          Well lets say infinite number of surfaces because we dont find objects
+          with perfect sharp edges in real life. The infinitely stiched together
+          surfaces is effortless for us human beings to comprehend but for your
+          computer it has to rely on approximation of reality. If we want to
+          draw a simple flat triangle in space we need the three vertexes A,B
+          and C. The algorithm underneath will for each frame fill the projected
+          triangle on the 2D screen with pixels based on the camera angle. Now
+          this happens at a much lower level, what we want at the moment is to
+          be able to darw surfaces on the screen so we will not bother with this
+          detail. And we can skip all the fundamental detials using threejs
+          which hides this implementation and allows us to draws surfaces
+          easily. The code snippet below on the left shows how you can draw a
+          triangle in space using threejs. The resulting render for this code is
+          on the right side.
+        </p>
+        <div
+          style="
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            align-items: center;
+          "
+        >
+          <div>
+            <pre>
+              <code class="language-javascript">
+                const geometry = new THREE.BufferGeometry();
+
+                const {A,B,C} = points;
+
+                const vertices = new Float32Array([
+                  A.x, A.y, A.z,
+                  B.x, B.y, B.z,
+                  C.x, C.y, C.z,
+                ]);
+
+                geometry.setAttribute(
+                  "position",
+                  new THREE.BufferAttribute(vertices, 3)
+                );
+
+                const material = new THREE.MeshBasicMaterial({
+                  color: 0xfff000,
+                  side: THREE.DoubleSide
+                });
+
+                const triangle = new THREE.Mesh(geometry, material);
+                scene.add(triangle);
+              </code>
+            </pre>
+          </div>
+          <div id="simple-surface" style="height: 400px; width: 400px"></div>
+        </div>
+        <p>
+          Now why am I showing you all this, because we need to draw a surface
+          which represents a country on the globe. A country is a closed polygon
+          that can be represented but a set of points (latitude and longitude).
+          If we can somehow fill this polygon multiple triangles truning it into
+          a surface is the easy part because we just need to fill all the
+          triangles.
+        </p>
+        <h2>How do you fill a polygon with triangles?</h2>
+        <p>
+          Now lets looks at how we can fill a polygon with triangles. What we
+          have is the set of points forming the polygon but that alone is not
+          enough to draw the triangles. We need to have enough points inside the
+          polygon to form our triangles. What I have chosen to do for this
+          project is to just insert random points inside the polygon offset by a
+          certain distance. The number of random points I want to insert will
+          depend on how smooth I want the surface to be. One thing I have kept
+          the random points proportional to is the size or the area of the
+          polygon because it does not make sense to have the same amount of
+          points for both large and smaller polygons.
+        </p>
+
+        <p>
+          Once we have our random points inside a polygon, can we just start connecting all points to each other to form a triangle? Turns out this is something we cannot blindly proceed with because it has certain challenges.
+          
+        </p>
+        <h3>
+          So why triangulation and why specifically Delaunys Triangulation?
+        </h3>
+        <p>To draw surfaces</p>
+        <p>
+          I am using the Bowyer Watson algorithm in this project. This is
+          because it is relatively easy to understand and implement for me.
+        </p>
+        <p>
+          Now lets start with triangulation first. Lets say you have a bunch of
+          points which form a polygon, actually a hollow polygon because we dont
+          not have any points inside the polygon at this stage. Triangulation is
+          taking this polygon and adding points inside the polygon
+        </p>
+        <p>So what happens in this algorithm is you have a bunch of points</p>
+      </div>
+    </div> -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+      hljs.highlightAll();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

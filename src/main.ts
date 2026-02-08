@@ -7,7 +7,7 @@ import { countries, generateCountryData, allEdgesAreBoundary, loadAllCountries }
 import { formatPopulationData, loadCSV } from './helper';
 import { createControlPanel, createPopulationLegend, createRangeSlider, createToggle } from './legend';
 import { MeshNumber } from './constants';
-
+// import { animate as renderSimpleSurface } from './simpleSurface';
 
 function getCameraZ() {
   if (window.matchMedia('(max-width: 480px)').matches) {
@@ -16,7 +16,7 @@ function getCameraZ() {
   if (window.matchMedia('(max-width: 1024px)').matches) {
     return 4;      // tablets
   }
-  return window.innerWidth / 400; // desktop default
+  return 3; // desktop default
 }
 
 const populationCsv = await loadCSV('API_SP.POP.TOTL_DS2_en_csv_v2_34.csv');
@@ -304,7 +304,7 @@ createRangeSlider({cpanel, onChange: (value) => {
   populationYear = String(value);
   updatePopulationYear();
 }});
-createPopulationLegend();
+const legend = createPopulationLegend();
 
 // --- Start ---
 buildScene();
@@ -313,6 +313,15 @@ function animate() {
   controls.update();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
+  // renderSimpleSurface();
 }
+
+function toggleGlobeDisplay(hide = true) {
+  renderer.domElement.style.display = hide ? 'none' : '';
+  cpanel.style.display = hide ? 'none' : '';
+  legend.style.display = hide ? 'none' : '';
+}
+
+// toggleGlobeDisplay();
 animate();
 
