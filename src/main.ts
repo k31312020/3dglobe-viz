@@ -5,7 +5,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import type { CountryData } from './types';
 import { countries, generateCountryData, allEdgesAreBoundary, loadAllCountries } from './countries';
 import { formatPopulationData, loadCSV } from './helper';
-import { createControlPanel, createPopulationLegend, createRangeSlider, createToggle } from './legend';
+import { createControlPanel, createRangeSlider, createToggle } from './legend';
 import { MeshNumber } from './constants';
 // import { animate as renderSimpleSurface } from './simpleSurface';
 // import { Delaunay2D, type Vec2 } from './delaunate';
