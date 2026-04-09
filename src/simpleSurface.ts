@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import renderer from "./renderer";
 
 /* ============================================================
    TARGET CONTAINER
@@ -28,12 +29,11 @@ export const camera = new THREE.PerspectiveCamera(
 camera.position.set(3, 3, 5);
 camera.lookAt(0, 0, 0);
 
-export const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setSize(container.clientWidth, container.clientHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+// renderer.setSize(container.clientWidth, container.clientHeight);
+// renderer.setPixelRatio(window.devicePixelRatio);
 
 // 🔑 Mount renderer INSIDE the div
-container.appendChild(renderer.domElement);
+// container.appendChild(renderer.domElement);
 
 // OrbitControls
 const controls = new OrbitControls(camera, renderer.domElement);

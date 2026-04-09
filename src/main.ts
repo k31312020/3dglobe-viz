@@ -7,7 +7,10 @@ import { countries, generateCountryData, allEdgesAreBoundary, loadAllCountries }
 import { formatPopulationData, loadCSV } from './helper';
 import { createControlPanel, createPopulationLegend, createRangeSlider, createToggle } from './legend';
 import { MeshNumber } from './constants';
-// import { animate as renderSimpleSurface } from './simpleSurface';
+import { animate as renderSimpleSurface } from './simpleSurface';
+import { Delaunay2D, type Vec2 } from './delaunate';
+import { DelaunayVisualizer } from './bowyerWatson';
+import renderer from './renderer';
 
 function getCameraZ() {
   if (window.matchMedia('(max-width: 480px)').matches) {
@@ -27,9 +30,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 0, getCameraZ());
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 0); // fully transparent
+renderer.autoClear = false;  // we’ll manually clear for each scene
 document.body.appendChild(renderer.domElement);
 
 // OrbitControls
@@ -308,12 +311,29 @@ const legend = createPopulationLegend();
 
 // --- Start ---
 buildScene();
+
+// generate points
+const points: Vec2[] = [];
+for (let i = 0; i < 30; i++) {
+  points.push({
+    x: (Math.random() - 0.5) * 150,
+    y: (Math.random() - 0.5) * 150
+  });
+}
+
+// Create algorithm
+const delaunay = new Delaunay2D(points);
+
+// Create visualizer
+const delaunayVis = new DelaunayVisualizer(delaunay, 500, 500);
+
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
-  // renderSimpleSurface();
+  renderSimpleSurface();
+  delaunayVis.update();
 }
 
 function toggleGlobeDisplay(hide = true) {
