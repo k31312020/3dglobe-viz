@@ -7,9 +7,9 @@ import { countries, generateCountryData, allEdgesAreBoundary, loadAllCountries }
 import { formatPopulationData, loadCSV } from './helper';
 import { createControlPanel, createPopulationLegend, createRangeSlider, createToggle } from './legend';
 import { MeshNumber } from './constants';
-import { animate as renderSimpleSurface } from './simpleSurface';
-import { Delaunay2D, type Vec2 } from './delaunate';
-import { DelaunayVisualizer } from './bowyerWatson';
+// import { animate as renderSimpleSurface } from './simpleSurface';
+// import { Delaunay2D, type Vec2 } from './delaunate';
+// import { DelaunayVisualizer } from './bowyerWatson';
 import renderer from './renderer';
 
 function getCameraZ() {
@@ -312,28 +312,29 @@ const legend = createPopulationLegend();
 // --- Start ---
 buildScene();
 
-// generate points
-const points: Vec2[] = [];
-for (let i = 0; i < 30; i++) {
-  points.push({
-    x: (Math.random() - 0.5) * 150,
-    y: (Math.random() - 0.5) * 150
-  });
-}
-
-// Create algorithm
-const delaunay = new Delaunay2D(points);
-
-// Create visualizer
-const delaunayVis = new DelaunayVisualizer(delaunay, 500, 500);
+// Tutorial section disabled for now:
+// // generate points
+// const points: Vec2[] = [];
+// for (let i = 0; i < 30; i++) {
+//   points.push({
+//     x: (Math.random() - 0.5) * 150,
+//     y: (Math.random() - 0.5) * 150
+//   });
+// }
+//
+// // Create algorithm
+// const delaunay = new Delaunay2D(points);
+//
+// // Create visualizer
+// const delaunayVis = new DelaunayVisualizer(delaunay, 500, 500);
 
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
-  renderSimpleSurface();
-  delaunayVis.update();
+  // renderSimpleSurface();
+  // delaunayVis.update();
 }
 
 function toggleGlobeDisplay(hide = true) {
@@ -344,4 +345,3 @@ function toggleGlobeDisplay(hide = true) {
 
 // toggleGlobeDisplay();
 animate();
-
