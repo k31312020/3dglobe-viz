@@ -13,7 +13,7 @@ export class DelaunayVisualizer {
 
   public auto = false;
 
-  constructor(delaunay: Delaunay2D, width = 400, height = 400) {
+  constructor(delaunay: Delaunay2D) {
     this.delaunay = delaunay;
 
     // Scene
