@@ -10,7 +10,7 @@ const LARGE_COUNTRIES = ['Russia', 'Antartica'];
 export let countries: CountryData[] = [];
 
 export async function loadAllCountries() {
-  const res = await fetch('/public/countries.geo.json');
+  const res = await fetch('/countries.geo.json');
   const geojson = await res.json();
 
   const meshColorUSA = randomColor();
