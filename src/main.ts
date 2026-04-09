@@ -5,7 +5,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import type { CountryData } from './types';
 import { countries, generateCountryData, allEdgesAreBoundary, loadAllCountries } from './countries';
 import { formatPopulationData, loadCSV } from './helper';
-import { createControlPanel, createRangeSlider, createToggle } from './legend';
+import { createControlPanel, createPopulationLegend, createRangeSlider, createToggle } from './legend';
 import { MeshNumber } from './constants';
 // import { animate as renderSimpleSurface } from './simpleSurface';
 // import { Delaunay2D, type Vec2 } from './delaunate';
@@ -307,7 +307,7 @@ createRangeSlider({cpanel, onChange: (value) => {
   populationYear = String(value);
   updatePopulationYear();
 }});
-// const legend = createPopulationLegend();
+const legend = createPopulationLegend();
 
 // --- Start ---
 buildScene();
@@ -337,11 +337,11 @@ function animate() {
   // delaunayVis.update();
 }
 
-// function toggleGlobeDisplay(hide = true) {
-//   renderer.domElement.style.display = hide ? 'none' : '';
-//   cpanel.style.display = hide ? 'none' : '';
-//   legend.style.display = hide ? 'none' : '';
-// }
+function toggleGlobeDisplay(hide = false) {
+  renderer.domElement.style.display = hide ? 'none' : '';
+  cpanel.style.display = hide ? 'none' : '';
+  legend.style.display = hide ? 'none' : '';
+}
 
-// toggleGlobeDisplay();
+toggleGlobeDisplay();
 animate();
