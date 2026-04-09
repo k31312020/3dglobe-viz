@@ -337,11 +337,11 @@ function animate() {
   // delaunayVis.update();
 }
 
-function toggleGlobeDisplay(hide = true) {
-  renderer.domElement.style.display = hide ? 'none' : '';
-  cpanel.style.display = hide ? 'none' : '';
-  legend.style.display = hide ? 'none' : '';
-}
+// function toggleGlobeDisplay(hide = true) {
+//   renderer.domElement.style.display = hide ? 'none' : '';
+//   cpanel.style.display = hide ? 'none' : '';
+//   legend.style.display = hide ? 'none' : '';
+// }
 
 // toggleGlobeDisplay();
 animate();
