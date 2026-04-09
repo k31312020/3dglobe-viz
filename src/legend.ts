@@ -286,4 +286,6 @@ export function createPopulationLegend() {
   mainContainer.appendChild(legendContainer);
 
   document.body.appendChild(mainContainer);
+
+  return mainContainer;
 }
