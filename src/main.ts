@@ -307,7 +307,7 @@ createRangeSlider({cpanel, onChange: (value) => {
   populationYear = String(value);
   updatePopulationYear();
 }});
-const legend = createPopulationLegend();
+// const legend = createPopulationLegend();
 
 // --- Start ---
 buildScene();
